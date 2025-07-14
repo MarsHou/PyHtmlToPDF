@@ -1,7 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request, Header
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, HttpUrl
-from playwright.async_api import async_playwright
 import tempfile
 import os
 import io
@@ -11,6 +10,10 @@ import logging
 import json
 from datetime import datetime
 import uuid
+import subprocess
+import sys
+import importlib
+from version import __version__, get_version_info
 
 # Configure logging
 logging.basicConfig(
@@ -23,7 +26,115 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="HTML to PDF Converter", version="1.0.0")
+# Required dependencies
+REQUIRED_PACKAGES = [
+    'fastapi',
+    'uvicorn',
+    'playwright',
+    'pydantic'
+]
+
+def check_package_installed(package_name):
+    """Check if a package is installed"""
+    try:
+        importlib.import_module(package_name)
+        return True
+    except ImportError:
+        return False
+
+def install_package(package_name):
+    """Install a package using pip"""
+    try:
+        logger.info(f"Installing {package_name}...")
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package_name])
+        logger.info(f"Successfully installed {package_name}")
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to install {package_name}: {e}")
+        return False
+
+def install_playwright_browsers():
+    """Install Playwright browsers"""
+    try:
+        logger.info("Installing Playwright browsers...")
+        subprocess.check_call([sys.executable, "-m", "playwright", "install", "chromium"])
+        logger.info("Successfully installed Playwright browsers")
+        return True
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to install Playwright browsers: {e}")
+        return False
+
+def check_and_install_dependencies():
+    """Check and install all required dependencies"""
+    logger.info("=== Starting Dependency Check ===")
+    
+    missing_packages = []
+    for package in REQUIRED_PACKAGES:
+        if check_package_installed(package):
+            logger.info(f"✓ {package} is already installed")
+        else:
+            missing_packages.append(package)
+            logger.warning(f"✗ {package} is missing")
+    
+    if missing_packages:
+        logger.warning(f"Missing packages: {missing_packages}")
+        
+        # Read and install from requirements.txt
+        if os.path.exists('requirements.txt'):
+            logger.info("Installing packages from requirements.txt...")
+            try:
+                subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
+                logger.info("✓ Successfully installed packages from requirements.txt")
+            except subprocess.CalledProcessError as e:
+                logger.error(f"✗ Failed to install from requirements.txt: {e}")
+                
+                # Fallback: install individual packages
+                for package in missing_packages:
+                    install_package(package)
+        else:
+            # Install individual packages
+            for package in missing_packages:
+                install_package(package)
+    else:
+        logger.info("✓ All required packages are installed")
+    
+    # Check Playwright browsers
+    logger.info("Checking Playwright browsers...")
+    try:
+        from playwright.async_api import async_playwright
+        # Test if browsers are available
+        import asyncio
+        async def test_browser():
+            async with async_playwright() as p:
+                try:
+                    browser = await p.chromium.launch()
+                    await browser.close()
+                    return True
+                except Exception:
+                    return False
+        
+        if asyncio.run(test_browser()):
+            logger.info("✓ Playwright browsers are available")
+        else:
+            logger.warning("✗ Playwright browsers not available, installing...")
+            install_playwright_browsers()
+            
+    except Exception as e:
+        logger.warning(f"Could not test Playwright browsers: {e}")
+        logger.info("Installing Playwright browsers as fallback...")
+        install_playwright_browsers()
+    
+    logger.info("=== Dependency Check Completed ===")
+    return True
+
+# Now import playwright after ensuring it's installed
+try:
+    from playwright.async_api import async_playwright
+except ImportError:
+    logger.error("Playwright import failed even after installation attempt")
+    sys.exit(1)
+
+app = FastAPI(title="HTML to PDF Converter", version=__version__)
 
 class URLRequest(BaseModel):
     url: HttpUrl
@@ -55,7 +166,11 @@ DEFAULT_OPTIONS = {
 
 @app.get("/")
 async def root():
-    return {"message": "HTML to PDF Converter API","version":"1.0.0"}
+    return {
+        "message": "HTML to PDF Converter API",
+        "version": __version__,
+        **get_version_info()
+    }
 
 @app.post("/convert/url")
 async def convert_url_to_pdf(request: URLRequest, req: Request, x_request_id: str = Header(None)):
@@ -195,8 +310,18 @@ async def get_logs(limit: int = 100, request_id: str = None):
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy"}
+    return {
+        "status": "healthy",
+        "service": "HTML to PDF Converter",
+        "version": __version__,
+        "timestamp": datetime.now().isoformat(),
+        **get_version_info()
+    }
 
 if __name__ == "__main__":
+    # Check and install dependencies before starting the server
+    check_and_install_dependencies()
+    
     import uvicorn
+    logger.info(f"Starting HTML to PDF Converter v{__version__}")
     uvicorn.run(app, host="0.0.0.0", port=8000)

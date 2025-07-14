@@ -13,6 +13,22 @@ A Python FastAPI service that converts web pages or HTML source code to PDF file
 
 ## Installation
 
+### Automatic Installation (Recommended)
+The service will automatically check and install missing dependencies when started:
+
+```bash
+python main.py
+```
+
+The service will automatically:
+- Check for required Python packages
+- Install missing packages from requirements.txt
+- Install Playwright browsers if needed
+- Provide detailed logging of the installation process
+
+### Manual Installation
+If you prefer to install dependencies manually:
+
 1. Install Python dependencies:
 ```bash
 pip install -r requirements.txt
@@ -88,7 +104,19 @@ Query parameters:
 - `request_id` (optional): Filter logs by specific request ID
 
 ### GET /health
-Health check endpoint
+Health check endpoint - returns service status and version information
+
+Response:
+```json
+{
+  "status": "healthy",
+  "service": "HTML to PDF Converter",
+  "version": "1.2.0",
+  "timestamp": "2024-07-14T10:30:00.123456",
+  "build_date": "2024-07-14",
+  "description": "HTML to PDF Converter with Playwright and Request Tracking"
+}
+```
 
 ## Configuration
 
